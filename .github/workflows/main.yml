@@ -1,0 +1,29 @@
+name: Weekly NationStates Activity Ping
+
+on:
+  schedule:
+    # This tells GitHub to run the script every Monday morning automatically
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
+    # This allows you to also run it manually anytime by pressing a button
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.x'
+
+    - name: Install dependencies
+      run: pip install requests
+
+    - name: Run script
+      env:
+        NS_NATION_NAME: ${{ secrets.NS_NATION_NAME }}
+        NS_CONTACT_INFO: ${{ secrets.NS_CONTACT_INFO }}
+      run: python ns_ping.py
