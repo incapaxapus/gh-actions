@@ -16,8 +16,8 @@ formatted_name = NATION_NAME.strip().lower().replace(" ", "_")
 USER_AGENT = f"Weekly Ping Script, operated by {CONTACT_INFO} (Automated weekly activity ping)"
 
 def ping_nation():
-    # FIXED: The slash is now directly after .net and before the variable
-    url = f"https://nationstates.net{formatted_name}"
+    # UPDATED URL: Standard browser profile structure
+    url = f"https://nationstates.net/nation={formatted_name}"
     headers = {"User-Agent": USER_AGENT}
     
     try:
