@@ -4,10 +4,12 @@ import requests
 # Get some data from your GitHub Secrets
 # Make sure to create a secret with the name NS_NATION_NAME. Example: country_name
 # Make sure to create a secret with the name NS_CONTACT_INFO (For ping API). Example: country_name OR example@gmail.com
+# Make sure to create a secret with the name NS_PASSWORD. Example: qwerty123
 NATION_NAME = os.environ.get("NS_NATION_NAME")
 CONTACT_INFO = os.environ.get("NS_CONTACT_INFO")
+PASSWORD = os.environ.get("NS_PASSWORD")
 
-if not NATION_NAME or not CONTACT_INFO:
+if not NATION_NAME or not CONTACT_INFO or not PASSWORD:
     print("Error: Missing environmental variables. Check your GitHub Secrets.")
     exit(1)
 
@@ -19,16 +21,32 @@ USER_AGENT = f"Weekly Ping Script, operated by {CONTACT_INFO} (Automated weekly 
 
 def ping_nation():
     # Sets the URL for use by script
-    url = f"https://nationstates.net/nation={formatted_name}"
-    headers = {"User-Agent": USER_AGENT}
+    url = "https://www.nationstates.net/cgi-bin/api.cgi"
+
+    params = {
+        "nation": formatted_name,
+        "q": "ping"
+    }
+
+    headers = {
+        "User-Agent": USER_AGENT,
+        "X-Password": PASSWORD
+    }
     
     try:
-        response = requests.get(url, headers=headers)
+        response = requests.get(
+            url,
+            params=params,
+            headers=headers,
+            timeout=30
+        )
         
         if response.status_code == 200:
             print(f"Success! The page for '{NATION_NAME}' was successfully loaded and accessed.")
         elif response.status_code == 404:
             print(f"Error 404: Nation '{NATION_NAME}' was not found. Check the name in your GitHub Secrets.")
+        elif response.status_code == 403:
+            print("Error 403: Authentication failed. Check NS_PASSWORD.")
         else:
             print(f"Failed to load page. Status code: {response.status_code}")
             
