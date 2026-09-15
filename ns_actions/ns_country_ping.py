@@ -4,7 +4,7 @@ import requests
 # Get some data from your GitHub Secrets
 # Make sure to create a secret with the name NS_NATION_NAME. Example: country_name
 # Make sure to create a secret with the name NS_CONTACT_INFO (For ping API). Example: country_name OR example@gmail.com
-# Make sure to create a secret with the name NS_PASSWORD. Example: qwerty123
+# Make sure to create a secret with the name NS_PASSWORD.
 NATION_NAME = os.environ.get("NS_NATION_NAME")
 CONTACT_INFO = os.environ.get("NS_CONTACT_INFO")
 PASSWORD = os.environ.get("NS_PASSWORD")
