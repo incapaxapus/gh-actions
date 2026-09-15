@@ -1,4 +1,4 @@
-name: Weekly NationStates Activity Ping
+name: ns_country_ping
 
 on:
   schedule:
