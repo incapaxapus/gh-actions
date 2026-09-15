@@ -1,2 +1,3 @@
-# gh-actions
-GH Actions Repository.
+# nationstates-actions
+Assorted NationStates.net pings and more for people. 
+See wiki for usage.
