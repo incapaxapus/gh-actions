@@ -1,7 +1,9 @@
 import os
 import requests
 
-# Pull data securely from your GitHub Secrets
+# Get some data from your GitHub Secrets
+# Make sure to create a secret with the name NS_NATION_NAME. Example: country_name
+# Make sure to create a secret with the name NS_CONTACT_INFO (For ping API). Example: country_name OR example@gmail.com
 NATION_NAME = os.environ.get("NS_NATION_NAME")
 CONTACT_INFO = os.environ.get("NS_CONTACT_INFO")
 
@@ -9,14 +11,14 @@ if not NATION_NAME or not CONTACT_INFO:
     print("Error: Missing environmental variables. Check your GitHub Secrets.")
     exit(1)
 
-# Format the nation name correctly for the URL layout
+# Format the nation name correctly for the URL layout (In case of idiocy)
 formatted_name = NATION_NAME.strip().lower().replace(" ", "_")
 
-# Setting the mandatory user agent per NationStates API rules
+# Setting the user agent per NationStates API rules (why we need contact info)
 USER_AGENT = f"Weekly Ping Script, operated by {CONTACT_INFO} (Automated weekly activity ping)"
 
 def ping_nation():
-    # UPDATED URL: Standard browser profile structure
+    # Sets the URL for use by script
     url = f"https://nationstates.net/nation={formatted_name}"
     headers = {"User-Agent": USER_AGENT}
     
