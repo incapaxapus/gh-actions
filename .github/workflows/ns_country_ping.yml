@@ -26,4 +26,4 @@ jobs:
         env:
           NS_NATION_NAME: ${{ secrets.NS_NATION_NAME }}
           NS_CONTACT_INFO: ${{ secrets.NS_CONTACT_INFO }}
-        run: python ns_actions/ns_goo_ping.py
+        run: python ns_actions/ns_country_ping.py
