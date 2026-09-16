@@ -1,41 +1,24 @@
 import os
+import html
 import requests
 import xml.etree.ElementTree as ET
 from urllib.parse import quote_plus
-from html import escape
 
-NATION_NAME = os.environ.get("NS_NATION_NAME")
-CONTACT_INFO = os.environ.get("NS_CONTACT_INFO")
+NATION_NAME = os.environ["NS_NATION_NAME"].strip()
+CONTACT_INFO = os.environ["NS_CONTACT_INFO"].strip()
 
-if not NATION_NAME:
-    raise RuntimeError("NS_NATION_NAME GitHub Secret is missing.")
-
-if not CONTACT_INFO:
-    raise RuntimeError("NS_CONTACT_INFO GitHub Secret is missing.")
+NATION_SLUG = NATION_NAME.lower().replace(" ", "_")
 
 HEADERS = {
-    "User-Agent": (
-        f"Daily Endorsement Checker, operated by {CONTACT_INFO} "
-        "(Daily region check)"
-    )
+    "User-Agent": f"Daily Endorsement Checker, operated by {CONTACT_INFO}"
 }
 
-API_URL = "https://www.nationstates.net/cgi-bin/api.cgi"
-
-OUTPUT_DIR = os.path.join(
-    "outputs",
-    "endorsements"
-)
-
-OUTPUT_FILE = os.path.join(
-    OUTPUT_DIR,
-    "endorsements.html"
-)
+API = "https://www.nationstates.net/cgi-bin/api.cgi"
 
 
 def api_request(params):
     response = requests.get(
-        API_URL,
+        API,
         params=params,
         headers=HEADERS,
         timeout=30
@@ -43,329 +26,213 @@ def api_request(params):
 
     response.raise_for_status()
 
+    if not response.text.strip():
+        raise RuntimeError("NationStates returned an empty response.")
+
     return response.text
 
 
 def get_nation_info():
-    return api_request({
-        "nation": NATION_NAME,
+    xml = api_request({
+        "nation": NATION_SLUG,
         "q": "region+endorsements+wa"
     })
 
+    root = ET.fromstring(xml)
 
-def get_region_nations(region):
-    return api_request({
-        "region": region,
+    region = root.findtext(".//REGION", default="").strip()
+
+    endorsements_text = root.findtext(
+        ".//ENDORSEMENTS",
+        default=""
+    ).strip()
+
+    endorsements = {
+        name.strip().lower()
+        for name in endorsements_text.split(",")
+        if name.strip()
+    }
+
+    return region, endorsements
+
+
+def get_wa_nations(region):
+    region_slug = region.strip().lower().replace(" ", "_")
+
+    xml = api_request({
+        "region": region_slug,
         "q": "wanations"
     })
 
+    root = ET.fromstring(xml)
 
-def nation_slug(name):
-    return (
-        name
-        .strip()
-        .lower()
-        .replace(" ", "_")
-    )
+    wa_text = ""
+
+    for element in root.iter():
+        if element.tag.upper() == "WANATIONS":
+            wa_text = element.text or ""
+            break
+
+    nations = {
+        name.strip()
+        for name in wa_text.split(",")
+        if name.strip()
+    }
+
+    return nations
 
 
-def create_html(nations):
-    os.makedirs(
-        OUTPUT_DIR,
-        exist_ok=True
-    )
+def nation_url(name):
+    slug = name.strip().lower().replace(" ", "_")
+    return f"https://www.nationstates.net/nation={quote_plus(slug)}"
 
-    items = []
 
-    for nation in nations:
-        slug = nation_slug(nation)
+def generate_html(nations):
+    output_dir = "outputs/endorsements"
+    output_file = os.path.join(output_dir, "endorsements.html")
 
-        url = (
-            "https://www.nationstates.net/nation="
-            + quote_plus(slug)
-        )
+    os.makedirs(output_dir, exist_ok=True)
 
-        items.append(
+    lines = []
+
+    for nation in sorted(nations, key=str.lower):
+        safe_name = html.escape(nation)
+        url = nation_url(nation)
+
+        lines.append(
             f"""
-<div class="nation" data-slug="{escape(slug)}">
-    <a href="{escape(url)}"
-       target="_blank"
-       rel="noopener noreferrer"
-       onclick="markClicked('{escape(slug)}')">
-        {escape(url)}
-    </a>
-    <button onclick="removeNation('{escape(slug)}')">
-        Delete
-    </button>
-</div>
-"""
+            <div class="nation" id="nation-{html.escape(nation.lower().replace(" ", "-"))}">
+                <a href="{url}" target="_blank"
+                   onclick="removeNation(this)">
+                    {safe_name}
+                </a>
+                <button onclick="deleteNation(this)">Delete</button>
+            </div>
+            """
         )
 
-    html = f"""<!DOCTYPE html>
-<html lang="en">
+    html_page = f"""<!DOCTYPE html>
+<html>
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NationStates Endorsements</title>
+<title>Unendorsed WA Nations</title>
 
 <style>
 body {{
     font-family: Arial, sans-serif;
-    margin: 20px;
+    margin: 30px;
 }}
 
 .nation {{
-    margin-bottom: 8px;
+    margin: 8px 0;
 }}
 
 .nation a {{
-    margin-right: 8px;
+    margin-right: 10px;
 }}
 
 button {{
     cursor: pointer;
 }}
 
-#add-section {{
+#add {{
     margin-bottom: 20px;
 }}
-
-#nation-input {{
-    width: 350px;
-    max-width: 90%;
-}}
 </style>
-</head>
-
-<body>
-
-<div id="add-section">
-    <input
-        id="nation-input"
-        type="text"
-        placeholder="Nation name or URL"
-    >
-    <button onclick="addNation()">Add Nation</button>
-</div>
-
-<div id="nations">
-{''.join(items)}
-</div>
 
 <script>
-
-function normalizeNation(value) {{
-    value = value.trim();
-
-    if (!value) {{
-        return "";
-    }}
-
-    if (value.includes("nation=")) {{
-        value = value.split("nation=")[1];
-    }}
-
-    value = value.split("&")[0];
-    value = value.split("#")[0];
-
-    return value
-        .toLowerCase()
-        .replace(/ /g, "_");
+function removeNation(link) {{
+    setTimeout(function() {{
+        link.parentElement.remove();
+    }}, 100);
 }}
 
-function nationURL(slug) {{
-    return (
-        "https://www.nationstates.net/nation="
-        + encodeURIComponent(slug)
-    );
-}}
-
-function markClicked(slug) {{
-    const element = document.querySelector(
-        '[data-slug="' + CSS.escape(slug) + '"]'
-    );
-
-    if (element) {{
-        element.remove();
-    }}
-}}
-
-function removeNation(slug) {{
-    const element = document.querySelector(
-        '[data-slug="' + CSS.escape(slug) + '"]'
-    );
-
-    if (element) {{
-        element.remove();
-    }}
+function deleteNation(button) {{
+    button.parentElement.remove();
 }}
 
 function addNation() {{
-    const input = document.getElementById(
-        "nation-input"
-    );
+    const input = document.getElementById("nationInput");
+    const name = input.value.trim();
 
-    const slug = normalizeNation(
-        input.value
-    );
-
-    if (!slug) {{
-        return;
-    }}
-
-    const existing = document.querySelector(
-        '[data-slug="' + CSS.escape(slug) + '"]'
-    );
-
-    if (existing) {{
-        input.value = "";
-        return;
-    }}
-
-    const container = document.getElementById(
-        "nations"
-    );
+    if (!name) return;
 
     const div = document.createElement("div");
-
     div.className = "nation";
-    div.dataset.slug = slug;
 
     const link = document.createElement("a");
-
-    link.href = nationURL(slug);
+    link.href =
+        "https://www.nationstates.net/nation=" +
+        name.toLowerCase().replace(/ /g, "_");
     link.target = "_blank";
-    link.rel = "noopener noreferrer";
-    link.textContent = nationURL(slug);
+    link.textContent = name;
 
     link.onclick = function() {{
-        markClicked(slug);
+        setTimeout(function() {{
+            div.remove();
+        }}, 100);
     }};
 
     const button = document.createElement("button");
-
     button.textContent = "Delete";
-
     button.onclick = function() {{
-        removeNation(slug);
+        div.remove();
     }};
 
     div.appendChild(link);
     div.appendChild(button);
 
-    container.appendChild(div);
+    document.getElementById("nations").appendChild(div);
 
     input.value = "";
 }}
-
 </script>
+
+</head>
+
+<body>
+
+<h1>Unendorsed WA Nations</h1>
+
+<div id="add">
+    <input id="nationInput" placeholder="Nation name">
+    <button onclick="addNation()">Add Nation</button>
+</div>
+
+<div id="nations">
+{"".join(lines)}
+</div>
 
 </body>
 </html>
 """
 
-    with open(
-        OUTPUT_FILE,
-        "w",
-        encoding="utf-8"
-    ) as file:
-        file.write(html)
+    with open(output_file, "w", encoding="utf-8") as file:
+        file.write(html_page)
+
+    return output_file
 
 
 def main():
-    nation_xml = get_nation_info()
+    region, endorsements = get_nation_info()
 
-    nation_root = ET.fromstring(
-        nation_xml
-    )
+    wa_nations = get_wa_nations(region)
 
-    region_element = nation_root.find(
-        "REGION"
-    )
+    my_nation = NATION_SLUG.lower()
 
-    if region_element is None:
-        raise RuntimeError(
-            "Could not determine your region."
-        )
+    missing = {
+        nation for nation in wa_nations
+        if nation.lower().replace(" ", "_") != my_nation
+        and nation.lower().replace(" ", "_") not in endorsements
+    }
 
-    region = region_element.text.strip()
+    output = generate_html(missing)
 
-    endorsements_element = nation_root.find(
-        "ENDORSEMENTS"
-    )
-
-    endorsed = set()
-
-    if endorsements_element is not None:
-        if endorsements_element.text:
-            endorsed = {
-                nation_slug(nation)
-                for nation in
-                endorsements_element.text.split(",")
-                if nation.strip()
-            }
-
-    region_xml = get_region_nations(
-        region
-    )
-
-    region_root = ET.fromstring(
-        region_xml
-    )
-
-    wanations_element = region_root.find(
-        "WANATIONS"
-    )
-
-    wa_nations = []
-
-    if wanations_element is not None:
-        if wanations_element.text:
-            wa_nations = [
-                nation.strip()
-                for nation in
-                wanations_element.text.split(",")
-                if nation.strip()
-            ]
-
-    missing = []
-
-    own_slug = nation_slug(
-        NATION_NAME
-    )
-
-    for nation in wa_nations:
-        slug = nation_slug(nation)
-
-        if slug == own_slug:
-            continue
-
-        if slug not in endorsed:
-            missing.append(nation)
-
-    missing.sort(
-        key=str.lower
-    )
-
-    create_html(
-        missing
-    )
-
-    print(
-        f"Region: {region}"
-    )
-
-    print(
-        f"WA nations found: {len(wa_nations)}"
-    )
-
-    print(
-        f"Unendorsed WA nations: {len(missing)}"
-    )
-
-    print(
-        f"Generated: {OUTPUT_FILE}"
-    )
+    print(f"Region: {region}")
+    print(f"WA nations found: {len(wa_nations)}")
+    print(f"Your endorsements: {len(endorsements)}")
+    print(f"Unendorsed WA nations: {len(missing)}")
+    print(f"Generated: {output}")
 
 
 if __name__ == "__main__":
