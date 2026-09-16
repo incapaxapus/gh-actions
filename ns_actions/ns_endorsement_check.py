@@ -34,9 +34,9 @@ def api_request(params):
 
 def parse_nations(text):
     return {
-        name.strip().lower()
-        for name in text.split(",")
-        if name.strip()
+        x.strip().lower()
+        for x in text.split(",")
+        if x.strip()
     }
 
 
@@ -49,52 +49,57 @@ def get_nation_info():
     root = ET.fromstring(xml)
 
     region = root.findtext("REGION", "").strip()
-
     endorsements = parse_nations(
         root.findtext("ENDORSEMENTS", "")
     )
 
     if not region:
-        raise RuntimeError("Could not determine your region.")
+        raise RuntimeError("Could not determine region.")
 
     return region, endorsements
 
 
-def get_wa_nations(region):
+def get_region_wa_nations(region):
     region_slug = region.lower().replace(" ", "_")
 
-    response = requests.get(
-        API,
-        params={
-            "region": region_slug,
-            "q": "wanations"
-        },
-        headers=HEADERS,
-        timeout=30
-    )
+    xml = api_request({
+        "region": region_slug,
+        "q": "nations+wanations"
+    })
 
-    response.raise_for_status()
+    root = ET.fromstring(xml)
 
-    print("WA API URL:", response.url)
+    print("Region API root:", root.tag)
 
-    root = ET.fromstring(response.text)
-
-    print("WA API root:", root.tag)
+    nations = set()
+    wa_nations = set()
 
     for element in root:
+        tag = element.tag.upper()
+        text = element.text or ""
+
+        if tag == "NATIONS":
+            nations = parse_nations(text)
+
+        elif tag == "WANATIONS":
+            wa_nations = parse_nations(text)
+
         print(
-            "WA API field:",
-            element.tag,
-            "length:",
-            len(element.text or "")
+            f"API field: {element.tag} "
+            f"({len(text)} characters)"
         )
 
-        if element.tag.upper() == "WANATIONS":
-            return parse_nations(element.text or "")
+    if not nations:
+        raise RuntimeError(
+            "NationStates did not return NATIONS."
+        )
 
-    raise RuntimeError(
-        "WANATIONS was not returned by NationStates."
-    )
+    if not wa_nations:
+        raise RuntimeError(
+            "NationStates did not return WANATIONS."
+        )
+
+    return nations, wa_nations
 
 
 def nation_url(nation):
@@ -182,10 +187,8 @@ function addNation() {{
     div.className = "nation";
 
     const link = document.createElement("a");
-
     link.href =
         "https://www.nationstates.net/nation=" + slug;
-
     link.target = "_blank";
     link.textContent = name;
 
@@ -210,7 +213,6 @@ function addNation() {{
     input.value = "";
 }}
 </script>
-
 </head>
 
 <body>
@@ -232,8 +234,8 @@ function addNation() {{
 </html>
 """
 
-    with open(output_file, "w", encoding="utf-8") as file:
-        file.write(page)
+    with open(output_file, "w", encoding="utf-8") as f:
+        f.write(page)
 
     return output_file
 
@@ -241,7 +243,11 @@ function addNation() {{
 def main():
     region, endorsements = get_nation_info()
 
-    wa_nations = get_wa_nations(region)
+    region_nations, wa_nations = (
+        get_region_wa_nations(region)
+    )
+
+    wa_nations &= region_nations
 
     wa_nations.discard(NATION_SLUG)
 
@@ -250,6 +256,7 @@ def main():
     output = generate_html(unendorsed)
 
     print(f"Region: {region}")
+    print(f"Region nations found: {len(region_nations)}")
     print(f"WA nations found: {len(wa_nations)}")
     print(f"Your endorsements: {len(endorsements)}")
     print(f"Unendorsed WA nations: {len(unendorsed)}")
