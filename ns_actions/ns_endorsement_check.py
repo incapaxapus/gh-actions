@@ -53,9 +53,31 @@ def get_nation_info():
 
     region = root.findtext("REGION", "").strip()
 
-    endorsements = parse_nations(
-        root.findtext("ENDORSEMENTS", "")
+    endorsement_element = root.find("ENDORSEMENTS")
+
+    if endorsement_element is None:
+        raise RuntimeError(
+            "NationStates did not return ENDORSEMENTS."
+        )
+
+    endorsement_text = endorsement_element.text or ""
+
+    endorsements = {
+        name.strip().lower()
+        for name in endorsement_text.split(",")
+        if name.strip()
+    }
+
+    print(
+        f"Endorsements returned by API: "
+        f"{len(endorsements)}"
     )
+
+    if endorsements:
+        print(
+            "First endorsements:",
+            ", ".join(sorted(endorsements)[:10])
+        )
 
     if not region:
         raise RuntimeError(
@@ -63,7 +85,6 @@ def get_nation_info():
         )
 
     return region, endorsements
-
 
 def get_region_nations(region):
     region_slug = region.lower().replace(" ", "_")
