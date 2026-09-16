@@ -12,7 +12,9 @@ NATION_SLUG = NATION_NAME.lower().replace(" ", "_")
 API = "https://www.nationstates.net/cgi-bin/api.cgi"
 
 HEADERS = {
-    "User-Agent": f"Daily Endorsement Checker, operated by {CONTACT_INFO}"
+    "User-Agent": (
+        f"Daily Endorsement Checker, operated by {CONTACT_INFO}"
+    )
 }
 
 
@@ -27,16 +29,18 @@ def api_request(params):
     response.raise_for_status()
 
     if not response.text.strip():
-        raise RuntimeError("NationStates returned an empty response.")
+        raise RuntimeError(
+            "NationStates returned an empty response."
+        )
 
     return response.text
 
 
-def parse_list(text):
+def parse_nations(text):
     return {
-        item.strip().lower().replace(" ", "_")
-        for item in text.split(",")
-        if item.strip()
+        nation.strip().lower()
+        for nation in text.split(",")
+        if nation.strip()
     }
 
 
@@ -48,20 +52,35 @@ def get_nation_info():
 
     root = ET.fromstring(xml)
 
-    region = root.findtext("REGION", "").strip()
+    region = root.findtext(
+        "REGION",
+        ""
+    ).strip()
 
     endorsements_text = root.findtext(
         "ENDORSEMENTS",
         ""
     )
 
-    endorsements = parse_list(endorsements_text)
+    endorsements = parse_nations(
+        endorsements_text
+    )
+
+    if not region:
+        raise RuntimeError(
+            "Could not determine your nation's region."
+        )
 
     return region, endorsements
 
 
 def get_wa_nations(region):
-    region_slug = region.lower().replace(" ", "_")
+    region_slug = (
+        region
+        .strip()
+        .lower()
+        .replace(" ", "_")
+    )
 
     xml = api_request({
         "region": region_slug,
@@ -74,13 +93,15 @@ def get_wa_nations(region):
 
     if wa_element is None:
         raise RuntimeError(
-            "NationStates did not return WANATIONS for region "
-            + region
+            "NationStates did not return WANATIONS "
+            f"for region {region}."
         )
 
-    text = wa_element.text or ""
+    nations = parse_nations(
+        wa_element.text or ""
+    )
 
-    return parse_list(text)
+    return nations
 
 
 def nation_url(nation):
@@ -97,27 +118,38 @@ def generate_html(nations):
         "endorsements.html"
     )
 
-    os.makedirs(output_dir, exist_ok=True)
+    os.makedirs(
+        output_dir,
+        exist_ok=True
+    )
 
     entries = []
 
     for nation in sorted(nations):
-        display_name = nation.replace("_", " ")
-        safe_name = html.escape(display_name)
+        display_name = nation.replace(
+            "_",
+            " "
+        )
+
+        safe_name = html.escape(
+            display_name
+        )
+
+        url = nation_url(nation)
 
         entries.append(
             f"""
-            <div class="nation">
-                <a href="{nation_url(nation)}"
-                   target="_blank"
-                   onclick="removeNation(this)">
-                    {safe_name}
-                </a>
-                <button onclick="deleteNation(this)">
-                    Delete
-                </button>
-            </div>
-            """
+<div class="nation">
+    <a href="{url}"
+       target="_blank"
+       onclick="removeNation(this)">
+        {safe_name}
+    </a>
+    <button onclick="deleteNation(this)">
+        Delete
+    </button>
+</div>
+"""
         )
 
     page = f"""<!DOCTYPE html>
@@ -163,7 +195,9 @@ function addNation() {{
 
     const name = input.value.trim();
 
-    if (!name) return;
+    if (!name) {{
+        return;
+    }}
 
     const slug =
         name.toLowerCase().replace(/ /g, "_");
@@ -177,7 +211,7 @@ function addNation() {{
         document.createElement("a");
 
     link.href =
-        "https://www.nationstates.net/nation="
+        "https://www.nationstates.net/nation/"
         + slug;
 
     link.target = "_blank";
@@ -236,7 +270,11 @@ function addNation() {{
 </html>
 """
 
-    with open(output_file, "w", encoding="utf-8") as file:
+    with open(
+        output_file,
+        "w",
+        encoding="utf-8"
+    ) as file:
         file.write(page)
 
     return output_file
@@ -249,15 +287,30 @@ def main():
 
     wa_nations.discard(NATION_SLUG)
 
-    missing = wa_nations - endorsements
+    unendorsed = (
+        wa_nations - endorsements
+    )
 
-    output = generate_html(missing)
+    output = generate_html(
+        unendorsed
+    )
 
     print(f"Region: {region}")
-    print(f"WA nations found: {len(wa_nations)}")
-    print(f"Your endorsements: {len(endorsements)}")
-    print(f"Unendorsed WA nations: {len(missing)}")
-    print(f"Generated: {output}")
+    print(
+        f"WA nations found: "
+        f"{len(wa_nations)}"
+    )
+    print(
+        f"Your endorsements: "
+        f"{len(endorsements)}"
+    )
+    print(
+        f"Unendorsed WA nations: "
+        f"{len(unendorsed)}"
+    )
+    print(
+        f"Generated: {output}"
+    )
 
 
 if __name__ == "__main__":
