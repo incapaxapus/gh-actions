@@ -60,23 +60,20 @@ def get_wa_nations(region):
         "q": "wanations"
     })
 
-    print("RAW API RESPONSE:")
-    print(xml[:5000])
-
     root = ET.fromstring(xml)
 
-    print("ROOT:", root.tag)
-
     for element in root.iter():
-        print(
-            "TAG:",
-            element.tag,
-            "TEXT:",
-            repr(element.text)[:200]
-        )
+        if element.tag.upper() == "WANATIONS":
+            text = element.text or ""
+
+            return {
+                x.strip()
+                for x in text.split(",")
+                if x.strip()
+            }
 
     return set()
-    
+
 
 def nation_url(name):
     slug = name.lower().replace(" ", "_")
@@ -238,7 +235,6 @@ def main():
 
     output = generate_html(missing)
 
-    print()
     print(f"Region: {region}")
     print(f"WA nations found: {len(wa_nations)}")
     print(f"Your endorsements: {len(endorsements)}")
