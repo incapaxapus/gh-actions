@@ -43,6 +43,5 @@ jobs:
           fi
 
           git commit -m "Update endorsement list"
-
           git pull --rebase origin main
           git push
