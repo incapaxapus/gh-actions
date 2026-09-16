@@ -32,11 +32,11 @@ def api_request(params):
     return response.text
 
 
-def split_nations(text):
+def parse_list(text):
     return {
-        name.strip().lower().replace(" ", "_")
-        for name in text.split(",")
-        if name.strip()
+        item.strip().lower().replace(" ", "_")
+        for item in text.split(",")
+        if item.strip()
     }
 
 
@@ -48,67 +48,45 @@ def get_nation_info():
 
     root = ET.fromstring(xml)
 
-    region = root.findtext(".//REGION", "").strip()
+    region = root.findtext("REGION", "").strip()
 
     endorsements_text = root.findtext(
-        ".//ENDORSEMENTS",
+        "ENDORSEMENTS",
         ""
     )
 
-    endorsements = split_nations(endorsements_text)
+    endorsements = parse_list(endorsements_text)
 
     return region, endorsements
 
 
-def get_region_nations(region):
+def get_wa_nations(region):
     region_slug = region.lower().replace(" ", "_")
 
     xml = api_request({
         "region": region_slug,
-        "q": "nations"
+        "q": "wanations"
     })
 
     root = ET.fromstring(xml)
 
-    nations = set()
+    wa_element = root.find("WANATIONS")
 
-    for element in root.iter():
-        if element.tag.upper() == "NATIONS":
-            nations.update(split_nations(element.text or ""))
+    if wa_element is None:
+        raise RuntimeError(
+            "NationStates did not return WANATIONS for region "
+            + region
+        )
 
-        if element.tag.upper() == "UNNATIONS":
-            nations.update(split_nations(element.text or ""))
+    text = wa_element.text or ""
 
-    return nations
-
-
-def get_wa_members():
-    xml = api_request({
-        "wa": "1",
-        "q": "members"
-    })
-
-    root = ET.fromstring(xml)
-
-    members = set()
-
-    for element in root.iter():
-        if element.tag.upper() in {
-            "NATIONS",
-            "MEMBERS",
-            "WAMEMBERS"
-        }:
-            members.update(
-                split_nations(element.text or "")
-            )
-
-    return members
+    return parse_list(text)
 
 
-def nation_url(slug):
+def nation_url(nation):
     return (
         "https://www.nationstates.net/nation="
-        + quote_plus(slug)
+        + quote_plus(nation)
     )
 
 
@@ -121,17 +99,16 @@ def generate_html(nations):
 
     os.makedirs(output_dir, exist_ok=True)
 
-    nation_lines = []
+    entries = []
 
     for nation in sorted(nations):
         display_name = nation.replace("_", " ")
         safe_name = html.escape(display_name)
-        url = nation_url(nation)
 
-        nation_lines.append(
+        entries.append(
             f"""
             <div class="nation">
-                <a href="{url}"
+                <a href="{nation_url(nation)}"
                    target="_blank"
                    onclick="removeNation(this)">
                     {safe_name}
@@ -147,6 +124,7 @@ def generate_html(nations):
 <html>
 <head>
 <meta charset="UTF-8">
+
 <title>Unendorsed WA Nations</title>
 
 <style>
@@ -180,22 +158,27 @@ function deleteNation(button) {{
 }}
 
 function addNation() {{
-    const input = document.getElementById("nationInput");
+    const input =
+        document.getElementById("nationInput");
+
     const name = input.value.trim();
 
     if (!name) return;
 
-    const slug = name
-        .toLowerCase()
-        .replace(/ /g, "_");
+    const slug =
+        name.toLowerCase().replace(/ /g, "_");
 
-    const div = document.createElement("div");
+    const div =
+        document.createElement("div");
+
     div.className = "nation";
 
-    const link = document.createElement("a");
+    const link =
+        document.createElement("a");
 
     link.href =
-        "https://www.nationstates.net/nation=" + slug;
+        "https://www.nationstates.net/nation="
+        + slug;
 
     link.target = "_blank";
     link.textContent = name;
@@ -206,7 +189,8 @@ function addNation() {{
         }}, 100);
     }};
 
-    const button = document.createElement("button");
+    const button =
+        document.createElement("button");
 
     button.textContent = "Delete";
 
@@ -245,7 +229,7 @@ function addNation() {{
 <br>
 
 <div id="nations">
-{"".join(nation_lines)}
+{"".join(entries)}
 </div>
 
 </body>
@@ -261,23 +245,16 @@ function addNation() {{
 def main():
     region, endorsements = get_nation_info()
 
-    region_nations = get_region_nations(region)
-    wa_members = get_wa_members()
+    wa_nations = get_wa_nations(region)
 
-    wa_in_region = region_nations.intersection(
-        wa_members
-    )
+    wa_nations.discard(NATION_SLUG)
 
-    missing = wa_in_region - endorsements
-
-    missing.discard(NATION_SLUG)
+    missing = wa_nations - endorsements
 
     output = generate_html(missing)
 
     print(f"Region: {region}")
-    print(f"Region nations found: {len(region_nations)}")
-    print(f"WA members found: {len(wa_members)}")
-    print(f"WA nations in region: {len(wa_in_region)}")
+    print(f"WA nations found: {len(wa_nations)}")
     print(f"Your endorsements: {len(endorsements)}")
     print(f"Unendorsed WA nations: {len(missing)}")
     print(f"Generated: {output}")
