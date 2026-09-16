@@ -12,9 +12,7 @@ NATION_SLUG = NATION_NAME.lower().replace(" ", "_")
 API = "https://www.nationstates.net/cgi-bin/api.cgi"
 
 HEADERS = {
-    "User-Agent": (
-        f"Daily Endorsement Checker, operated by {CONTACT_INFO}"
-    )
+    "User-Agent": f"Daily Endorsement Checker, operated by {CONTACT_INFO}"
 }
 
 
@@ -29,18 +27,16 @@ def api_request(params):
     response.raise_for_status()
 
     if not response.text.strip():
-        raise RuntimeError(
-            "NationStates returned an empty response."
-        )
+        raise RuntimeError("NationStates returned an empty response.")
 
     return response.text
 
 
 def parse_nations(text):
     return {
-        nation.strip().lower()
-        for nation in text.split(",")
-        if nation.strip()
+        name.strip().lower()
+        for name in text.split(",")
+        if name.strip()
     }
 
 
@@ -52,83 +48,53 @@ def get_nation_info():
 
     root = ET.fromstring(xml)
 
-    region = root.findtext(
-        "REGION",
-        ""
-    ).strip()
+    region = root.findtext("REGION", "").strip()
 
     endorsements = parse_nations(
-        root.findtext(
-            "ENDORSEMENTS",
-            ""
-        )
+        root.findtext("ENDORSEMENTS", "")
     )
 
     if not region:
-        raise RuntimeError(
-            "Could not determine your region."
-        )
+        raise RuntimeError("Could not determine your region.")
 
     return region, endorsements
 
 
-def get_region_nations(region):
-    region_slug = (
-        region.lower()
-        .replace(" ", "_")
+def get_wa_nations(region):
+    region_slug = region.lower().replace(" ", "_")
+
+    response = requests.get(
+        API,
+        params={
+            "region": region_slug,
+            "q": "wanations"
+        },
+        headers=HEADERS,
+        timeout=30
     )
 
-    xml = api_request({
-        "region": region_slug,
-        "q": "nations+unnations"
-    })
+    response.raise_for_status()
 
-    root = ET.fromstring(xml)
+    print("WA API URL:", response.url)
 
-    nations = set()
-    unnations = set()
+    root = ET.fromstring(response.text)
 
-    for element in root.iter():
-        tag = element.tag.upper()
+    print("WA API root:", root.tag)
 
-        if tag == "NATIONS":
-            nations.update(
-                parse_nations(element.text or "")
-            )
-
-        elif tag == "UNNATIONS":
-            unnations.update(
-                parse_nations(element.text or "")
-            )
-
-    return nations, unnations
-
-
-def get_wa_members():
-    xml = api_request({
-        "wa": "3",
-        "q": "members"
-    })
-
-    root = ET.fromstring(xml)
-
-    members = set()
-
-    for element in root.iter():
-        if element.tag.upper() in {
-            "NATIONS",
-            "MEMBERS"
-        }:
-            members.update(
-                parse_nations(element.text or "")
-            )
-
-    if not members:
-        raise RuntimeError(
-            "NationStates returned no WA members."
+    for element in root:
+        print(
+            "WA API field:",
+            element.tag,
+            "length:",
+            len(element.text or "")
         )
 
-    return members
+        if element.tag.upper() == "WANATIONS":
+            return parse_nations(element.text or "")
+
+    raise RuntimeError(
+        "WANATIONS was not returned by NationStates."
+    )
 
 
 def nation_url(nation):
@@ -145,22 +111,13 @@ def generate_html(nations):
         "endorsements.html"
     )
 
-    os.makedirs(
-        output_dir,
-        exist_ok=True
-    )
+    os.makedirs(output_dir, exist_ok=True)
 
     entries = []
 
     for nation in sorted(nations):
-        display_name = nation.replace(
-            "_",
-            " "
-        )
-
-        safe_name = html.escape(
-            display_name
-        )
+        display_name = nation.replace("_", " ")
+        safe_name = html.escape(display_name)
 
         entries.append(
             f"""
@@ -214,27 +171,20 @@ function deleteNation(button) {{
 }}
 
 function addNation() {{
-    const input =
-        document.getElementById("nationInput");
-
+    const input = document.getElementById("nationInput");
     const name = input.value.trim();
 
     if (!name) return;
 
-    const slug =
-        name.toLowerCase().replace(/ /g, "_");
+    const slug = name.toLowerCase().replace(/ /g, "_");
 
-    const div =
-        document.createElement("div");
-
+    const div = document.createElement("div");
     div.className = "nation";
 
-    const link =
-        document.createElement("a");
+    const link = document.createElement("a");
 
     link.href =
-        "https://www.nationstates.net/nation="
-        + slug;
+        "https://www.nationstates.net/nation=" + slug;
 
     link.target = "_blank";
     link.textContent = name;
@@ -245,9 +195,7 @@ function addNation() {{
         }}, 100);
     }};
 
-    const button =
-        document.createElement("button");
-
+    const button = document.createElement("button");
     button.textContent = "Delete";
 
     button.onclick = function() {{
@@ -257,13 +205,12 @@ function addNation() {{
     div.appendChild(link);
     div.appendChild(button);
 
-    document
-        .getElementById("nations")
-        .appendChild(div);
+    document.getElementById("nations").appendChild(div);
 
     input.value = "";
 }}
 </script>
+
 </head>
 
 <body>
@@ -271,14 +218,8 @@ function addNation() {{
 <h1>Unendorsed WA Nations</h1>
 
 <div>
-    <input
-        id="nationInput"
-        placeholder="Nation name"
-    >
-
-    <button onclick="addNation()">
-        Add Nation
-    </button>
+    <input id="nationInput" placeholder="Nation name">
+    <button onclick="addNation()">Add Nation</button>
 </div>
 
 <br>
@@ -291,11 +232,7 @@ function addNation() {{
 </html>
 """
 
-    with open(
-        output_file,
-        "w",
-        encoding="utf-8"
-    ) as file:
+    with open(output_file, "w", encoding="utf-8") as file:
         file.write(page)
 
     return output_file
@@ -304,62 +241,19 @@ function addNation() {{
 def main():
     region, endorsements = get_nation_info()
 
-    region_nations, unnations = (
-        get_region_nations(region)
-    )
+    wa_nations = get_wa_nations(region)
 
-    wa_members = get_wa_members()
+    wa_nations.discard(NATION_SLUG)
 
-    # WA members that are residents of this region.
-    wa_in_region = (
-        region_nations & wa_members
-    )
+    unendorsed = wa_nations - endorsements
 
-    # Extra protection: never include known non-WA nations.
-    wa_in_region -= unnations
-
-    # Remove your own nation and existing endorsements.
-    unendorsed = (
-        wa_in_region
-        - endorsements
-    )
-
-    unendorsed.discard(
-        NATION_SLUG
-    )
-
-    output = generate_html(
-        unendorsed
-    )
+    output = generate_html(unendorsed)
 
     print(f"Region: {region}")
-    print(
-        f"Region nations found: "
-        f"{len(region_nations)}"
-    )
-    print(
-        f"Known non-WA nations: "
-        f"{len(unnations)}"
-    )
-    print(
-        f"WA members found: "
-        f"{len(wa_members)}"
-    )
-    print(
-        f"WA nations in region: "
-        f"{len(wa_in_region)}"
-    )
-    print(
-        f"Your endorsements: "
-        f"{len(endorsements)}"
-    )
-    print(
-        f"Unendorsed WA nations: "
-        f"{len(unendorsed)}"
-    )
-    print(
-        f"Generated: {output}"
-    )
+    print(f"WA nations found: {len(wa_nations)}")
+    print(f"Your endorsements: {len(endorsements)}")
+    print(f"Unendorsed WA nations: {len(unendorsed)}")
+    print(f"Generated: {output}")
 
 
 if __name__ == "__main__":
