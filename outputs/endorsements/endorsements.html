@@ -40,14 +40,17 @@ function addNation() {
 
     if (!name) return;
 
+    const slug = name
+        .toLowerCase()
+        .replace(/ /g, "_");
+
     const div = document.createElement("div");
     div.className = "nation";
 
     const link = document.createElement("a");
 
     link.href =
-        "https://www.nationstates.net/nation=" +
-        name.toLowerCase().replace(/ /g, "_");
+        "https://www.nationstates.net/nation=" + slug;
 
     link.target = "_blank";
     link.textContent = name;
@@ -59,6 +62,7 @@ function addNation() {
     };
 
     const button = document.createElement("button");
+
     button.textContent = "Delete";
 
     button.onclick = function() {
@@ -68,7 +72,9 @@ function addNation() {
     div.appendChild(link);
     div.appendChild(button);
 
-    document.getElementById("nations").appendChild(div);
+    document
+        .getElementById("nations")
+        .appendChild(div);
 
     input.value = "";
 }
