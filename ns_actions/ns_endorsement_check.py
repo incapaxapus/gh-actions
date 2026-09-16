@@ -57,51 +57,78 @@ def get_nation_info():
         ""
     ).strip()
 
-    endorsements_text = root.findtext(
-        "ENDORSEMENTS",
-        ""
-    )
-
     endorsements = parse_nations(
-        endorsements_text
+        root.findtext(
+            "ENDORSEMENTS",
+            ""
+        )
     )
 
     if not region:
         raise RuntimeError(
-            "Could not determine your nation's region."
+            "Could not determine your region."
         )
 
     return region, endorsements
 
 
-def get_wa_nations(region):
+def get_region_nations(region):
     region_slug = (
-        region
-        .strip()
-        .lower()
+        region.lower()
         .replace(" ", "_")
     )
 
     xml = api_request({
         "region": region_slug,
-        "q": "wanations"
+        "q": "nations+unnations"
     })
 
     root = ET.fromstring(xml)
 
-    wa_element = root.find("WANATIONS")
+    nations = set()
+    unnations = set()
 
-    if wa_element is None:
+    for element in root.iter():
+        tag = element.tag.upper()
+
+        if tag == "NATIONS":
+            nations.update(
+                parse_nations(element.text or "")
+            )
+
+        elif tag == "UNNATIONS":
+            unnations.update(
+                parse_nations(element.text or "")
+            )
+
+    return nations, unnations
+
+
+def get_wa_members():
+    xml = api_request({
+        "wa": "3",
+        "q": "members"
+    })
+
+    root = ET.fromstring(xml)
+
+    members = set()
+
+    for element in root.iter():
+        if element.tag.upper() in {
+            "NATIONS",
+            "MEMBERS"
+        }:
+            members.update(
+                parse_nations(element.text or "")
+            )
+
+    if not members:
         raise RuntimeError(
-            "NationStates did not return WANATIONS "
-            f"for region {region}."
+            "NationStates returned no WA members."
         )
 
-    nations = parse_nations(
-        wa_element.text or ""
-    )
-
-    return nations
+    return members
 
 
 def nation_url(nation):
@@ -135,12 +162,10 @@ def generate_html(nations):
             display_name
         )
 
-        url = nation_url(nation)
-
         entries.append(
             f"""
 <div class="nation">
-    <a href="{url}"
+    <a href="{nation_url(nation)}"
        target="_blank"
        onclick="removeNation(this)">
         {safe_name}
@@ -156,7 +181,6 @@ def generate_html(nations):
 <html>
 <head>
 <meta charset="UTF-8">
-
 <title>Unendorsed WA Nations</title>
 
 <style>
@@ -195,9 +219,7 @@ function addNation() {{
 
     const name = input.value.trim();
 
-    if (!name) {{
-        return;
-    }}
+    if (!name) return;
 
     const slug =
         name.toLowerCase().replace(/ /g, "_");
@@ -211,7 +233,7 @@ function addNation() {{
         document.createElement("a");
 
     link.href =
-        "https://www.nationstates.net/nation/"
+        "https://www.nationstates.net/nation="
         + slug;
 
     link.target = "_blank";
@@ -242,7 +264,6 @@ function addNation() {{
     input.value = "";
 }}
 </script>
-
 </head>
 
 <body>
@@ -283,12 +304,28 @@ function addNation() {{
 def main():
     region, endorsements = get_nation_info()
 
-    wa_nations = get_wa_nations(region)
+    region_nations, unnations = (
+        get_region_nations(region)
+    )
 
-    wa_nations.discard(NATION_SLUG)
+    wa_members = get_wa_members()
 
+    # WA members that are residents of this region.
+    wa_in_region = (
+        region_nations & wa_members
+    )
+
+    # Extra protection: never include known non-WA nations.
+    wa_in_region -= unnations
+
+    # Remove your own nation and existing endorsements.
     unendorsed = (
-        wa_nations - endorsements
+        wa_in_region
+        - endorsements
+    )
+
+    unendorsed.discard(
+        NATION_SLUG
     )
 
     output = generate_html(
@@ -297,8 +334,20 @@ def main():
 
     print(f"Region: {region}")
     print(
-        f"WA nations found: "
-        f"{len(wa_nations)}"
+        f"Region nations found: "
+        f"{len(region_nations)}"
+    )
+    print(
+        f"Known non-WA nations: "
+        f"{len(unnations)}"
+    )
+    print(
+        f"WA members found: "
+        f"{len(wa_members)}"
+    )
+    print(
+        f"WA nations in region: "
+        f"{len(wa_in_region)}"
     )
     print(
         f"Your endorsements: "
