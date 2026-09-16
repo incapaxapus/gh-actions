@@ -55,24 +55,51 @@ def get_nation_info():
 def get_wa_nations(region):
     region_slug = region.lower().replace(" ", "_")
 
-    xml = api_request({
+    params = {
         "region": region_slug,
         "q": "wanations"
-    })
+    }
+
+    response = requests.get(
+        API,
+        params=params,
+        headers=HEADERS,
+        timeout=30
+    )
+
+    response.raise_for_status()
+
+    print("API URL:", response.url)
+
+    xml = response.text
+    print("Response length:", len(xml))
 
     root = ET.fromstring(xml)
 
-    for element in root.iter():
-        if element.tag.upper() == "WANATIONS":
-            text = element.text or ""
+    print("Root:", root.tag)
 
-            return {
-                x.strip()
-                for x in text.split(",")
-                if x.strip()
-            }
+    wa_element = root.find("WANATIONS")
 
-    return set()
+    if wa_element is None:
+        print("WANATIONS was NOT returned by the API.")
+        print("Returned tags:")
+
+        for element in root:
+            print(" ", element.tag)
+
+        return set()
+
+    text = wa_element.text or ""
+
+    nations = {
+        x.strip()
+        for x in text.split(",")
+        if x.strip()
+    }
+
+    print("WA nations parsed:", len(nations))
+
+    return nations
 
 
 def nation_url(name):
