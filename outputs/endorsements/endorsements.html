@@ -21,10 +21,6 @@ body {
 button {
     cursor: pointer;
 }
-
-#add {
-    margin-bottom: 20px;
-}
 </style>
 
 <script>
@@ -48,9 +44,11 @@ function addNation() {
     div.className = "nation";
 
     const link = document.createElement("a");
+
     link.href =
         "https://www.nationstates.net/nation=" +
         name.toLowerCase().replace(/ /g, "_");
+
     link.target = "_blank";
     link.textContent = name;
 
@@ -62,6 +60,7 @@ function addNation() {
 
     const button = document.createElement("button");
     button.textContent = "Delete";
+
     button.onclick = function() {
         div.remove();
     };
@@ -81,10 +80,18 @@ function addNation() {
 
 <h1>Unendorsed WA Nations</h1>
 
-<div id="add">
-    <input id="nationInput" placeholder="Nation name">
-    <button onclick="addNation()">Add Nation</button>
+<div>
+    <input
+        id="nationInput"
+        placeholder="Nation name"
+    >
+
+    <button onclick="addNation()">
+        Add Nation
+    </button>
 </div>
+
+<br>
 
 <div id="nations">
 
