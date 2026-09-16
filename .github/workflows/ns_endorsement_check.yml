@@ -1,4 +1,4 @@
-name: ns_endorsement_check.py
+name: ns_endorsement_check
 
 on:
   schedule:
