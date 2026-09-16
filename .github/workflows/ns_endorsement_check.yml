@@ -1,0 +1,39 @@
+name: ns_endorsement_check.py
+
+on:
+  schedule:
+    - cron: "0 14 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  endorsements:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install requests
+        run: pip install requests
+
+      - name: Generate endorsements
+        env:
+          NS_NATION_NAME: ${{ secrets.NS_NATION_NAME }}
+          NS_CONTACT_INFO: ${{ secrets.NS_CONTACT_INFO }}
+        run: python ns_actions/ns_endorsement_check.py
+
+      - name: Commit output
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add outputs/endorsements/
+          git diff --cached --quiet || git commit -m "Update endorsement list"
+          git push
