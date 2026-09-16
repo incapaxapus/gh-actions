@@ -35,6 +35,7 @@ def api_request(params):
 
 
 def parse_nations(text):
+    text = text.replace(":", ",")
     return {
         x.strip().lower()
         for x in text.split(",")
