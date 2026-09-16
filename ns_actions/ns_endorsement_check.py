@@ -1,5 +1,6 @@
 import os
 import requests
+import xml.etree.ElementTree as ET
 from urllib.parse import quote_plus
 from html import escape
 
@@ -12,19 +13,24 @@ if not NATION_NAME:
 if not CONTACT_INFO:
     raise RuntimeError("NS_CONTACT_INFO GitHub Secret is missing.")
 
-USER_AGENT = (
-    f"Daily Endorsement Checker, operated by {CONTACT_INFO} "
-    "(Daily region check)"
-)
-
 HEADERS = {
-    "User-Agent": USER_AGENT
+    "User-Agent": (
+        f"Daily Endorsement Checker, operated by {CONTACT_INFO} "
+        "(Daily region check)"
+    )
 }
 
 API_URL = "https://www.nationstates.net/cgi-bin/api.cgi"
 
-OUTPUT_DIR = os.path.join("outputs", "endorsements")
-OUTPUT_FILE = os.path.join(OUTPUT_DIR, "endorsements.html")
+OUTPUT_DIR = os.path.join(
+    "outputs",
+    "endorsements"
+)
+
+OUTPUT_FILE = os.path.join(
+    OUTPUT_DIR,
+    "endorsements.html"
+)
 
 
 def api_request(params):
@@ -34,105 +40,24 @@ def api_request(params):
         headers=HEADERS,
         timeout=30
     )
+
     response.raise_for_status()
+
     return response.text
 
 
 def get_nation_info():
-    params = {
+    return api_request({
         "nation": NATION_NAME,
         "q": "region+endorsements+wa"
-    }
-    return api_request(params)
+    })
 
 
-def extract_xml_tag(xml, tag):
-    start = xml.find(f"<{tag}>")
-    end = xml.find(f"</{tag}>")
-
-    if start == -1 or end == -1:
-        return None
-
-    start += len(tag) + 2
-    return xml[start:end]
-
-
-def extract_endorsements(xml):
-    endorsements = []
-
-    start = xml.find("<ENDORSEMENTS>")
-
-    if start == -1:
-        return endorsements
-
-    end = xml.find("</ENDORSEMENTS>", start)
-
-    if end == -1:
-        return endorsements
-
-    section = xml[start:end]
-    position = 0
-
-    while True:
-        nation_start = section.find(
-            "<NATION>",
-            position
-        )
-
-        if nation_start == -1:
-            break
-
-        nation_end = section.find(
-            "</NATION>",
-            nation_start
-        )
-
-        if nation_end == -1:
-            break
-
-        nation = section[
-            nation_start + len("<NATION>"):
-            nation_end
-        ]
-
-        endorsements.append(nation.strip())
-
-        position = nation_end + len("</NATION>")
-
-    return endorsements
-
-
-def get_region_nations(region_name):
-    params = {
-        "region": region_name,
+def get_region_nations(region):
+    return api_request({
+        "region": region,
         "q": "wanations"
-    }
-
-    return api_request(params)
-
-
-def extract_nations(xml, tag):
-    nations = []
-
-    start = xml.find(f"<{tag}>")
-
-    if start == -1:
-        return nations
-
-    end = xml.find(f"</{tag}>", start)
-
-    if end == -1:
-        return nations
-
-    section = xml[start:end]
-
-    for nation in section.replace("\n", "").split(","):
-        nation = nation.strip()
-
-        if nation:
-            nations.append(nation)
-
-    return nations
+    })
 
 
 def nation_slug(name):
@@ -150,7 +75,7 @@ def create_html(nations):
         exist_ok=True
     )
 
-    links = []
+    items = []
 
     for nation in nations:
         slug = nation_slug(nation)
@@ -160,23 +85,21 @@ def create_html(nations):
             + quote_plus(slug)
         )
 
-        links.append(
+        items.append(
             f"""
-            <div class="nation" data-slug="{escape(slug)}">
-                <a href="{escape(url)}"
-                   target="_blank"
-                   rel="noopener noreferrer"
-                   onclick="markClicked('{escape(slug)}')">
-                    {escape(url)}
-                </a>
-                <button onclick="removeNation('{escape(slug)}')">
-                    Delete
-                </button>
-            </div>
-            """
+<div class="nation" data-slug="{escape(slug)}">
+    <a href="{escape(url)}"
+       target="_blank"
+       rel="noopener noreferrer"
+       onclick="markClicked('{escape(slug)}')">
+        {escape(url)}
+    </a>
+    <button onclick="removeNation('{escape(slug)}')">
+        Delete
+    </button>
+</div>
+"""
         )
-
-    links_html = "\n".join(links)
 
     html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -226,29 +149,10 @@ button {{
 </div>
 
 <div id="nations">
-{links_html}
+{''.join(items)}
 </div>
 
 <script>
-
-const STORAGE_KEY = "ns_endorsement_changes";
-
-function getChanges() {{
-    try {{
-        return JSON.parse(
-            localStorage.getItem(STORAGE_KEY)
-        ) || {{ removed: [], added: [] }};
-    }} catch {{
-        return {{ removed: [], added: [] }};
-    }}
-}}
-
-function saveChanges(changes) {{
-    localStorage.setItem(
-        STORAGE_KEY,
-        JSON.stringify(changes)
-    );
-}}
 
 function normalizeNation(value) {{
     value = value.trim();
@@ -277,42 +181,16 @@ function nationURL(slug) {{
 }}
 
 function markClicked(slug) {{
-    const changes = getChanges();
-
-    if (!changes.removed.includes(slug)) {{
-        changes.removed.push(slug);
-    }}
-
-    changes.added = changes.added.filter(
-        nation => nation !== slug
+    const element = document.querySelector(
+        '[data-slug="' + CSS.escape(slug) + '"]'
     );
 
-    saveChanges(changes);
-
-    setTimeout(() => {{
-        const element = document.querySelector(
-            '[data-slug="' + CSS.escape(slug) + '"]'
-        );
-
-        if (element) {{
-            element.remove();
-        }}
-    }}, 100);
+    if (element) {{
+        element.remove();
+    }}
 }}
 
 function removeNation(slug) {{
-    const changes = getChanges();
-
-    if (!changes.removed.includes(slug)) {{
-        changes.removed.push(slug);
-    }}
-
-    changes.added = changes.added.filter(
-        nation => nation !== slug
-    );
-
-    saveChanges(changes);
-
     const element = document.querySelector(
         '[data-slug="' + CSS.escape(slug) + '"]'
     );
@@ -335,29 +213,12 @@ function addNation() {{
         return;
     }}
 
-    const changes = getChanges();
-
-    changes.removed = changes.removed.filter(
-        nation => nation !== slug
-    );
-
-    if (!changes.added.includes(slug)) {{
-        changes.added.push(slug);
-    }}
-
-    saveChanges(changes);
-
-    addNationToPage(slug);
-
-    input.value = "";
-}}
-
-function addNationToPage(slug) {{
     const existing = document.querySelector(
         '[data-slug="' + CSS.escape(slug) + '"]'
     );
 
     if (existing) {{
+        input.value = "";
         return;
     }}
 
@@ -393,27 +254,9 @@ function addNationToPage(slug) {{
     div.appendChild(button);
 
     container.appendChild(div);
+
+    input.value = "";
 }}
-
-function applySavedChanges() {{
-    const changes = getChanges();
-
-    for (const slug of changes.removed) {{
-        const element = document.querySelector(
-            '[data-slug="' + CSS.escape(slug) + '"]'
-        );
-
-        if (element) {{
-            element.remove();
-        }}
-    }}
-
-    for (const slug of changes.added) {{
-        addNationToPage(slug);
-    }}
-}}
-
-applySavedChanges();
 
 </script>
 
@@ -430,57 +273,98 @@ applySavedChanges();
 
 
 def main():
-    print("NationStates endorsement check")
-
     nation_xml = get_nation_info()
 
-    region = extract_xml_tag(
-        nation_xml,
+    nation_root = ET.fromstring(
+        nation_xml
+    )
+
+    region_element = nation_root.find(
         "REGION"
     )
 
-    if not region:
+    if region_element is None:
         raise RuntimeError(
             "Could not determine your region."
         )
 
-    endorsed = extract_endorsements(
-        nation_xml
+    region = region_element.text.strip()
+
+    endorsements_element = nation_root.find(
+        "ENDORSEMENTS"
     )
 
-    endorsed_normalized = {
-        nation_slug(nation)
-        for nation in endorsed
-    }
+    endorsed = set()
+
+    if endorsements_element is not None:
+        if endorsements_element.text:
+            endorsed = {
+                nation_slug(nation)
+                for nation in
+                endorsements_element.text.split(",")
+                if nation.strip()
+            }
 
     region_xml = get_region_nations(
         region
     )
 
-    wa_nations = extract_nations(
-        region_xml,
+    region_root = ET.fromstring(
+        region_xml
+    )
+
+    wanations_element = region_root.find(
         "WANATIONS"
     )
 
+    wa_nations = []
+
+    if wanations_element is not None:
+        if wanations_element.text:
+            wa_nations = [
+                nation.strip()
+                for nation in
+                wanations_element.text.split(",")
+                if nation.strip()
+            ]
+
     missing = []
+
+    own_slug = nation_slug(
+        NATION_NAME
+    )
 
     for nation in wa_nations:
         slug = nation_slug(nation)
 
-        if slug == nation_slug(NATION_NAME):
+        if slug == own_slug:
             continue
 
-        if slug not in endorsed_normalized:
+        if slug not in endorsed:
             missing.append(nation)
 
     missing.sort(
         key=str.lower
     )
 
-    create_html(missing)
+    create_html(
+        missing
+    )
 
     print(
-        f"Generated {OUTPUT_FILE}"
+        f"Region: {region}"
+    )
+
+    print(
+        f"WA nations found: {len(wa_nations)}"
+    )
+
+    print(
+        f"Unendorsed WA nations: {len(missing)}"
+    )
+
+    print(
+        f"Generated: {OUTPUT_FILE}"
     )
 
 
