@@ -1,4 +1,4 @@
-name: ns_endorsement_check
+name: Daily NationStates Endorsements
 
 on:
   schedule:
@@ -14,17 +14,19 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.x"
 
       - name: Install requests
         run: pip install requests
 
-      - name: Generate endorsements
+      - name: Generate output
         env:
           NS_NATION_NAME: ${{ secrets.NS_NATION_NAME }}
           NS_CONTACT_INFO: ${{ secrets.NS_CONTACT_INFO }}
@@ -43,5 +45,7 @@ jobs:
           fi
 
           git commit -m "Update endorsement list"
+
           git pull --rebase origin main
+
           git push
