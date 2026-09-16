@@ -1,4 +1,4 @@
-name: Daily NationStates Endorsements
+name: ns_endorsement_check
 
 on:
   schedule:
