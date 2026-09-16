@@ -12,7 +12,9 @@ NATION_SLUG = NATION_NAME.lower().replace(" ", "_")
 API = "https://www.nationstates.net/cgi-bin/api.cgi"
 
 HEADERS = {
-    "User-Agent": f"Daily Endorsement Checker, operated by {CONTACT_INFO}"
+    "User-Agent": (
+        f"Daily Endorsement Checker, operated by {CONTACT_INFO}"
+    )
 }
 
 
@@ -49,57 +51,70 @@ def get_nation_info():
     root = ET.fromstring(xml)
 
     region = root.findtext("REGION", "").strip()
+
     endorsements = parse_nations(
         root.findtext("ENDORSEMENTS", "")
     )
 
     if not region:
-        raise RuntimeError("Could not determine region.")
+        raise RuntimeError(
+            "Could not determine your nation's region."
+        )
 
     return region, endorsements
 
 
-def get_region_wa_nations(region):
+def get_region_nations(region):
     region_slug = region.lower().replace(" ", "_")
 
     xml = api_request({
         "region": region_slug,
-        "q": "nations+wanations"
+        "q": "nations"
     })
 
     root = ET.fromstring(xml)
 
-    print("Region API root:", root.tag)
-
     nations = set()
-    wa_nations = set()
 
-    for element in root:
-        tag = element.tag.upper()
-        text = element.text or ""
-
-        if tag == "NATIONS":
-            nations = parse_nations(text)
-
-        elif tag == "WANATIONS":
-            wa_nations = parse_nations(text)
-
-        print(
-            f"API field: {element.tag} "
-            f"({len(text)} characters)"
-        )
+    for element in root.iter():
+        if element.tag.upper() == "NATIONS":
+            nations.update(
+                parse_nations(element.text or "")
+            )
 
     if not nations:
         raise RuntimeError(
-            "NationStates did not return NATIONS."
+            "NationStates returned no regional nations."
         )
 
-    if not wa_nations:
+    return nations
+
+
+def get_wa_members():
+    xml = api_request({
+        "wa": "3",
+        "q": "members"
+    })
+
+    root = ET.fromstring(xml)
+
+    members = set()
+
+    for element in root.iter():
+        if element.tag.upper() in {
+            "NATIONS",
+            "MEMBERS"
+        }:
+            members.update(
+                parse_nations(element.text or "")
+            )
+
+    if not members:
         raise RuntimeError(
-            "NationStates did not return WANATIONS."
+            "NationStates returned no WA members."
         )
 
-    return nations, wa_nations
+    return members
 
 
 def nation_url(nation):
@@ -176,19 +191,28 @@ function deleteNation(button) {{
 }}
 
 function addNation() {{
-    const input = document.getElementById("nationInput");
+    const input =
+        document.getElementById("nationInput");
+
     const name = input.value.trim();
 
     if (!name) return;
 
-    const slug = name.toLowerCase().replace(/ /g, "_");
+    const slug =
+        name.toLowerCase().replace(/ /g, "_");
 
-    const div = document.createElement("div");
+    const div =
+        document.createElement("div");
+
     div.className = "nation";
 
-    const link = document.createElement("a");
+    const link =
+        document.createElement("a");
+
     link.href =
-        "https://www.nationstates.net/nation=" + slug;
+        "https://www.nationstates.net/nation="
+        + slug;
+
     link.target = "_blank";
     link.textContent = name;
 
@@ -198,7 +222,9 @@ function addNation() {{
         }}, 100);
     }};
 
-    const button = document.createElement("button");
+    const button =
+        document.createElement("button");
+
     button.textContent = "Delete";
 
     button.onclick = function() {{
@@ -208,11 +234,14 @@ function addNation() {{
     div.appendChild(link);
     div.appendChild(button);
 
-    document.getElementById("nations").appendChild(div);
+    document
+        .getElementById("nations")
+        .appendChild(div);
 
     input.value = "";
 }}
 </script>
+
 </head>
 
 <body>
@@ -220,8 +249,14 @@ function addNation() {{
 <h1>Unendorsed WA Nations</h1>
 
 <div>
-    <input id="nationInput" placeholder="Nation name">
-    <button onclick="addNation()">Add Nation</button>
+    <input
+        id="nationInput"
+        placeholder="Nation name"
+    >
+
+    <button onclick="addNation()">
+        Add Nation
+    </button>
 </div>
 
 <br>
@@ -234,8 +269,12 @@ function addNation() {{
 </html>
 """
 
-    with open(output_file, "w", encoding="utf-8") as f:
-        f.write(page)
+    with open(
+        output_file,
+        "w",
+        encoding="utf-8"
+    ) as file:
+        file.write(page)
 
     return output_file
 
@@ -243,23 +282,44 @@ function addNation() {{
 def main():
     region, endorsements = get_nation_info()
 
-    region_nations, wa_nations = (
-        get_region_wa_nations(region)
+    region_nations = get_region_nations(region)
+    wa_members = get_wa_members()
+
+    wa_in_region = (
+        region_nations
+        & wa_members
     )
 
-    wa_nations &= region_nations
+    wa_in_region.discard(NATION_SLUG)
 
-    wa_nations.discard(NATION_SLUG)
-
-    unendorsed = wa_nations - endorsements
+    unendorsed = (
+        wa_in_region
+        - endorsements
+    )
 
     output = generate_html(unendorsed)
 
     print(f"Region: {region}")
-    print(f"Region nations found: {len(region_nations)}")
-    print(f"WA nations found: {len(wa_nations)}")
-    print(f"Your endorsements: {len(endorsements)}")
-    print(f"Unendorsed WA nations: {len(unendorsed)}")
+    print(
+        f"Region nations found: "
+        f"{len(region_nations)}"
+    )
+    print(
+        f"WA members found: "
+        f"{len(wa_members)}"
+    )
+    print(
+        f"WA nations in region: "
+        f"{len(wa_in_region)}"
+    )
+    print(
+        f"Your endorsements: "
+        f"{len(endorsements)}"
+    )
+    print(
+        f"Unendorsed WA nations: "
+        f"{len(unendorsed)}"
+    )
     print(f"Generated: {output}")
 
 
