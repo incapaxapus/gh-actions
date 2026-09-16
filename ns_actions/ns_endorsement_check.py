@@ -62,14 +62,17 @@ def get_wa_nations(region):
 
     root = ET.fromstring(xml)
 
+    print("Region API root:", root.tag)
+
     wa_nations = set()
     number = None
 
     for element in root.iter():
         tag = element.tag.upper()
+        text = (element.text or "").strip()
 
         if tag == "WANATIONS":
-            text = element.text or ""
+            print("WANATIONS raw length:", len(text))
 
             for nation in text.split(","):
                 nation = nation.strip()
@@ -78,13 +81,12 @@ def get_wa_nations(region):
                     wa_nations.add(nation)
 
         elif tag == "NUMWANATIONS":
-            number = (element.text or "").strip()
+            number = text
 
-    print(f"API numwanations: {number}")
-    print(f"API WANATIONS entries parsed: {len(wa_nations)}")
+    print("API numwanations:", number)
+    print("API WANATIONS entries parsed:", len(wa_nations))
 
     return wa_nations
-
 
 def nation_url(name):
     slug = name.lower().replace(" ", "_")
