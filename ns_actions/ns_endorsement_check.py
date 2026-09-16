@@ -35,10 +35,9 @@ def api_request(params):
 
 
 def parse_nations(text):
-    text = text.replace(":", ",")
     return {
-        x.strip().lower()
-        for x in text.split(",")
+        x.strip().lower().replace(" ", "_")
+        for x in text.replace("\n", "").split(",")
         if x.strip()
     }
 
@@ -307,41 +306,30 @@ def main():
     region_nations = get_region_nations(region)
     wa_members = get_wa_members()
 
-    wa_in_region = (
-        region_nations
-        & wa_members
-    )
+    wa_in_region = region_nations & wa_members
 
     wa_in_region.discard(NATION_SLUG)
 
-    unendorsed = (
-        wa_in_region
-        - endorsements
+    unendorsed = {
+        nation
+        for nation in wa_in_region
+        if nation not in endorsements
+    }
+
+    already_endorsed = (
+        wa_in_region & endorsements
     )
+
+    print(f"Region: {region}")
+    print(f"Region nations found: {len(region_nations)}")
+    print(f"WA members found: {len(wa_members)}")
+    print(f"WA nations in region: {len(wa_in_region)}")
+    print(f"Your endorsements: {len(endorsements)}")
+    print(f"Already endorsed in region: {len(already_endorsed)}")
+    print(f"Unendorsed WA nations: {len(unendorsed)}")
 
     output = generate_html(unendorsed)
 
-    print(f"Region: {region}")
-    print(
-        f"Region nations found: "
-        f"{len(region_nations)}"
-    )
-    print(
-        f"WA members found: "
-        f"{len(wa_members)}"
-    )
-    print(
-        f"WA nations in region: "
-        f"{len(wa_in_region)}"
-    )
-    print(
-        f"Your endorsements: "
-        f"{len(endorsements)}"
-    )
-    print(
-        f"Unendorsed WA nations: "
-        f"{len(unendorsed)}"
-    )
     print(f"Generated: {output}")
 
 
