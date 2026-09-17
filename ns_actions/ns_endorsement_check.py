@@ -14,9 +14,7 @@ API = "https://www.nationstates.net/cgi-bin/api.cgi"
 DUMP_URL = "https://www.nationstates.net/pages/nations.xml.gz"
 
 HEADERS = {
-    "User-Agent": (
-        f"Daily Endorsement Checker, operated by {CONTACT_INFO}"
-    )
+    "User-Agent": f"Daily Endorsement Checker, operated by {CONTACT_INFO}"
 }
 
 session = requests.Session()
@@ -34,9 +32,9 @@ def parse_list(text):
     text = text.replace(":", ",")
 
     return {
-        normalize(x)
-        for x in text.split(",")
-        if x.strip()
+        normalize(name)
+        for name in text.split(",")
+        if name.strip()
     }
 
 
@@ -49,6 +47,9 @@ def api_request(params):
 
     response.raise_for_status()
 
+    if not response.text.strip():
+        raise RuntimeError("NationStates returned an empty response.")
+
     return response.text
 
 
@@ -60,15 +61,10 @@ def get_region():
 
     root = ET.fromstring(xml)
 
-    region = root.findtext(
-        "REGION",
-        ""
-    ).strip()
+    region = root.findtext("REGION", "").strip()
 
     if not region:
-        raise RuntimeError(
-            "Could not determine your region."
-        )
+        raise RuntimeError("Could not determine your region.")
 
     return normalize(region)
 
@@ -83,13 +79,12 @@ def get_region_nations(region):
 
     for element in root.iter():
         if element.tag.upper() == "NATIONS":
-            return parse_list(
-                element.text or ""
-            )
+            nations = parse_list(element.text or "")
 
-    raise RuntimeError(
-        "Could not get nations in your region."
-    )
+            if nations:
+                return nations
+
+    raise RuntimeError("Could not get nations in your region.")
 
 
 def get_wa_members():
@@ -102,13 +97,12 @@ def get_wa_members():
 
     for element in root.iter():
         if element.tag.upper() == "MEMBERS":
-            return parse_list(
-                element.text or ""
-            )
+            members = parse_list(element.text or "")
 
-    raise RuntimeError(
-        "Could not get WA members."
-    )
+            if members:
+                return members
+
+    raise RuntimeError("Could not get WA members.")
 
 
 def download_dump():
@@ -116,7 +110,7 @@ def download_dump():
 
     response = session.get(
         DUMP_URL,
-        timeout=120
+        timeout=180
     )
 
     response.raise_for_status()
@@ -126,64 +120,43 @@ def download_dump():
         f"{len(response.content) / 1024 / 1024:.1f} MB"
     )
 
-    return gzip.decompress(
-        response.content
-    )
+    return gzip.decompress(response.content)
 
 
-def get_my_endorsements(
+def find_my_endorsed_nations(
     dump_data,
-    region,
     wa_in_region
 ):
     print("Reading endorsement data...")
 
     root = ET.fromstring(dump_data)
 
-    my_endorsements = set()
+    endorsed = set()
+
+    checked = 0
 
     for nation in root.findall(".//NATION"):
-        name = nation.findtext(
-            "NAME",
-            ""
-        )
-
+        name = nation.findtext("NAME", "")
         slug = normalize(name)
 
-        if slug != NATION_SLUG:
+        if slug not in wa_in_region:
             continue
 
-        nation_region = normalize(
-            nation.findtext(
-                "REGION",
-                ""
-            )
+        checked += 1
+
+        endorsements = parse_list(
+            nation.findtext("ENDORSEMENTS", "")
         )
 
-        if nation_region != region:
-            raise RuntimeError(
-                "Your nation was found in the dump, "
-                "but the region did not match."
-            )
+        if NATION_SLUG in endorsements:
+            endorsed.add(slug)
 
-        endorsements = nation.findtext(
-            "ENDORSEMENTS",
-            ""
-        )
+    print(
+        f"Checked endorsement data for "
+        f"{checked} WA nations in the region."
+    )
 
-        my_endorsements = parse_list(
-            endorsements
-        )
-
-        break
-
-    if not my_endorsements:
-        print(
-            "No endorsements were found "
-            "for your nation in the dump."
-        )
-
-    return my_endorsements & wa_in_region
+    return endorsed
 
 
 def nation_url(nation):
@@ -193,10 +166,7 @@ def nation_url(nation):
     )
 
 
-def generate_html(
-    unendorsed,
-    region
-):
+def generate_html(unendorsed, region):
     output_dir = "outputs/endorsements"
     output_file = os.path.join(
         output_dir,
@@ -211,14 +181,8 @@ def generate_html(
     entries = []
 
     for nation in sorted(unendorsed):
-        display_name = nation.replace(
-            "_",
-            " "
-        )
-
-        safe_name = html.escape(
-            display_name
-        )
+        display_name = nation.replace("_", " ")
+        safe_name = html.escape(display_name)
 
         entries.append(
             f"""
@@ -240,7 +204,6 @@ def generate_html(
 <html>
 <head>
 <meta charset="UTF-8">
-
 <title>Unendorsed WA Nations</title>
 
 <style>
@@ -374,33 +337,26 @@ def main():
     region = get_region()
 
     print(
-        f"Region: "
-        f"{region.replace('_', ' ')}"
+        f"Region: {region.replace('_', ' ')}"
     )
 
-    region_nations = get_region_nations(
-        region
-    )
+    region_nations = get_region_nations(region)
 
     print(
-        f"Region nations: "
-        f"{len(region_nations)}"
+        f"Region nations: {len(region_nations)}"
     )
 
     wa_members = get_wa_members()
 
     print(
-        f"WA members: "
-        f"{len(wa_members)}"
+        f"WA members: {len(wa_members)}"
     )
 
     wa_in_region = (
         region_nations & wa_members
     )
 
-    wa_in_region.discard(
-        NATION_SLUG
-    )
+    wa_in_region.discard(NATION_SLUG)
 
     print(
         f"WA nations in region: "
@@ -409,9 +365,8 @@ def main():
 
     dump_data = download_dump()
 
-    already_endorsed = get_my_endorsements(
+    already_endorsed = find_my_endorsed_nations(
         dump_data,
-        region,
         wa_in_region
     )
 
@@ -434,9 +389,7 @@ def main():
         region
     )
 
-    print(
-        f"Generated: {output}"
-    )
+    print(f"Generated: {output}")
 
 
 if __name__ == "__main__":
