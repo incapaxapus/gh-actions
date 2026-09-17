@@ -1,6 +1,6 @@
 import os
+import gzip
 import html
-import time
 import requests
 import xml.etree.ElementTree as ET
 from urllib.parse import quote_plus
@@ -11,6 +11,7 @@ CONTACT_INFO = os.environ["NS_CONTACT_INFO"].strip()
 NATION_SLUG = NATION_NAME.lower().replace(" ", "_")
 
 API = "https://www.nationstates.net/cgi-bin/api.cgi"
+DUMP_URL = "https://www.nationstates.net/pages/nations.xml.gz"
 
 HEADERS = {
     "User-Agent": (
@@ -21,15 +22,15 @@ HEADERS = {
 session = requests.Session()
 session.headers.update(HEADERS)
 
-BATCH_SIZE = 40
-BATCH_DELAY = 30
-
 
 def normalize(name):
     return name.strip().lower().replace(" ", "_")
 
 
-def parse_nations(text):
+def parse_list(text):
+    if not text:
+        return set()
+
     text = text.replace(":", ",")
 
     return {
@@ -47,11 +48,6 @@ def api_request(params):
     )
 
     response.raise_for_status()
-
-    if not response.text.strip():
-        raise RuntimeError(
-            "NationStates returned an empty response."
-        )
 
     return response.text
 
@@ -74,33 +70,26 @@ def get_region():
             "Could not determine your region."
         )
 
-    return region
+    return normalize(region)
 
 
 def get_region_nations(region):
     xml = api_request({
-        "region": normalize(region),
+        "region": region,
         "q": "nations"
     })
 
     root = ET.fromstring(xml)
 
-    nations = set()
-
     for element in root.iter():
         if element.tag.upper() == "NATIONS":
-            nations.update(
-                parse_nations(
-                    element.text or ""
-                )
+            return parse_list(
+                element.text or ""
             )
 
-    if not nations:
-        raise RuntimeError(
-            "NationStates returned no regional nations."
-        )
-
-    return nations
+    raise RuntimeError(
+        "Could not get nations in your region."
+    )
 
 
 def get_wa_members():
@@ -111,40 +100,90 @@ def get_wa_members():
 
     root = ET.fromstring(xml)
 
-    members = set()
-
     for element in root.iter():
         if element.tag.upper() == "MEMBERS":
-            members.update(
-                parse_nations(
-                    element.text or ""
-                )
+            return parse_list(
+                element.text or ""
             )
 
-    if not members:
-        raise RuntimeError(
-            "NationStates returned no WA members."
+    raise RuntimeError(
+        "Could not get WA members."
+    )
+
+
+def download_dump():
+    print("Downloading NationStates daily dump...")
+
+    response = session.get(
+        DUMP_URL,
+        timeout=120
+    )
+
+    response.raise_for_status()
+
+    print(
+        f"Downloaded "
+        f"{len(response.content) / 1024 / 1024:.1f} MB"
+    )
+
+    return gzip.decompress(
+        response.content
+    )
+
+
+def get_my_endorsements(
+    dump_data,
+    region,
+    wa_in_region
+):
+    print("Reading endorsement data...")
+
+    root = ET.fromstring(dump_data)
+
+    my_endorsements = set()
+
+    for nation in root.findall(".//NATION"):
+        name = nation.findtext(
+            "NAME",
+            ""
         )
 
-    return members
+        slug = normalize(name)
 
+        if slug != NATION_SLUG:
+            continue
 
-def endorses_me(nation):
-    xml = api_request({
-        "nation": nation,
-        "q": "endorsements"
-    })
+        nation_region = normalize(
+            nation.findtext(
+                "REGION",
+                ""
+            )
+        )
 
-    root = ET.fromstring(xml)
+        if nation_region != region:
+            raise RuntimeError(
+                "Your nation was found in the dump, "
+                "but the region did not match."
+            )
 
-    endorsements = parse_nations(
-        root.findtext(
+        endorsements = nation.findtext(
             "ENDORSEMENTS",
             ""
         )
-    )
 
-    return NATION_SLUG in endorsements
+        my_endorsements = parse_list(
+            endorsements
+        )
+
+        break
+
+    if not my_endorsements:
+        print(
+            "No endorsements were found "
+            "for your nation in the dump."
+        )
+
+    return my_endorsements & wa_in_region
 
 
 def nation_url(nation):
@@ -154,7 +193,10 @@ def nation_url(nation):
     )
 
 
-def generate_html(nations):
+def generate_html(
+    unendorsed,
+    region
+):
     output_dir = "outputs/endorsements"
     output_file = os.path.join(
         output_dir,
@@ -168,7 +210,7 @@ def generate_html(nations):
 
     entries = []
 
-    for nation in sorted(nations):
+    for nation in sorted(unendorsed):
         display_name = nation.replace(
             "_",
             " "
@@ -186,6 +228,7 @@ def generate_html(nations):
        onclick="removeNation(this)">
         {safe_name}
     </a>
+
     <button onclick="deleteNation(this)">
         Delete
     </button>
@@ -197,6 +240,7 @@ def generate_html(nations):
 <html>
 <head>
 <meta charset="UTF-8">
+
 <title>Unendorsed WA Nations</title>
 
 <style>
@@ -235,7 +279,9 @@ function addNation() {{
 
     const name = input.value.trim();
 
-    if (!name) return;
+    if (!name) {{
+        return;
+    }}
 
     const slug =
         name.toLowerCase().replace(/ /g, "_");
@@ -287,6 +333,10 @@ function addNation() {{
 
 <h1>Unendorsed WA Nations</h1>
 
+<p>
+Region: {html.escape(region.replace("_", " "))}
+</p>
+
 <div>
     <input
         id="nationInput"
@@ -319,13 +369,30 @@ function addNation() {{
 
 
 def main():
+    print("Starting endorsement checker...")
+
     region = get_region()
+
+    print(
+        f"Region: "
+        f"{region.replace('_', ' ')}"
+    )
 
     region_nations = get_region_nations(
         region
     )
 
+    print(
+        f"Region nations: "
+        f"{len(region_nations)}"
+    )
+
     wa_members = get_wa_members()
+
+    print(
+        f"WA members: "
+        f"{len(wa_members)}"
+    )
 
     wa_in_region = (
         region_nations & wa_members
@@ -335,69 +402,38 @@ def main():
         NATION_SLUG
     )
 
-    endorsed = set()
-    unendorsed = set()
-
-    total = len(wa_in_region)
-
-    print(f"Region: {region}")
-    print(
-        f"Region nations found: "
-        f"{len(region_nations)}"
-    )
-    print(
-        f"WA members found: "
-        f"{len(wa_members)}"
-    )
     print(
         f"WA nations in region: "
-        f"{total}"
+        f"{len(wa_in_region)}"
     )
 
-    for index, nation in enumerate(
-        sorted(wa_in_region),
-        start=1
-    ):
-        try:
-            if endorses_me(nation):
-                endorsed.add(nation)
-            else:
-                unendorsed.add(nation)
+    dump_data = download_dump()
 
-        except Exception as error:
-            print(
-                f"Error checking {nation}: "
-                f"{error}"
-            )
-            unendorsed.add(nation)
+    already_endorsed = get_my_endorsements(
+        dump_data,
+        region,
+        wa_in_region
+    )
 
-        if index % 10 == 0 or index == total:
-            print(
-                f"Checked {index}/{total}"
-            )
-
-        if (
-            index % BATCH_SIZE == 0
-            and index < total
-        ):
-            print(
-                f"Rate-limit pause after "
-                f"{index} requests..."
-            )
-            time.sleep(BATCH_DELAY)
-
-    output = generate_html(
-        unendorsed
+    unendorsed = (
+        wa_in_region - already_endorsed
     )
 
     print(
-        f"Already endorsed: "
-        f"{len(endorsed)}"
+        f"Already endorsed in region: "
+        f"{len(already_endorsed)}"
     )
+
     print(
         f"Unendorsed WA nations: "
         f"{len(unendorsed)}"
     )
+
+    output = generate_html(
+        unendorsed,
+        region
+    )
+
     print(
         f"Generated: {output}"
     )
