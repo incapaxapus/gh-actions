@@ -1,5 +1,6 @@
 import os
 import html
+import time
 import requests
 import xml.etree.ElementTree as ET
 from urllib.parse import quote_plus
@@ -18,6 +19,10 @@ HEADERS = {
 }
 
 
+def normalize(name):
+    return name.strip().lower().replace(" ", "_")
+
+
 def api_request(params):
     response = requests.get(
         API,
@@ -29,113 +34,80 @@ def api_request(params):
     response.raise_for_status()
 
     if not response.text.strip():
-        raise RuntimeError("NationStates returned an empty response.")
+        raise RuntimeError(
+            "NationStates returned an empty response."
+        )
 
     return response.text
 
 
-def parse_nations(text):
+def parse_list(text):
     return {
-        x.strip().lower().replace(" ", "_")
-        for x in text.replace("\n", "").split(",")
+        normalize(x)
+        for x in text.split(",")
         if x.strip()
     }
 
 
-def get_nation_info():
+def get_region():
     xml = api_request({
         "nation": NATION_SLUG,
-        "q": "region+endorsements"
+        "q": "region"
     })
 
     root = ET.fromstring(xml)
 
-    region = root.findtext("REGION", "").strip()
-
-    endorsement_element = root.find("ENDORSEMENTS")
-
-    if endorsement_element is None:
-        raise RuntimeError(
-            "NationStates did not return ENDORSEMENTS."
-        )
-
-    endorsement_text = endorsement_element.text or ""
-
-    endorsements = {
-        name.strip().lower()
-        for name in endorsement_text.split(",")
-        if name.strip()
-    }
-
-    print(
-        f"Endorsements returned by API: "
-        f"{len(endorsements)}"
-    )
-
-    if endorsements:
-        print(
-            "First endorsements:",
-            ", ".join(sorted(endorsements)[:10])
-        )
+    region = root.findtext(
+        "REGION",
+        ""
+    ).strip()
 
     if not region:
         raise RuntimeError(
-            "Could not determine your nation's region."
+            "Could not determine your region."
         )
 
-    return region, endorsements
+    return region
 
-def get_region_nations(region):
-    region_slug = region.lower().replace(" ", "_")
+
+def get_wa_nations(region):
+    region_slug = normalize(region)
 
     xml = api_request({
         "region": region_slug,
-        "q": "nations"
+        "q": "wanations"
     })
 
     root = ET.fromstring(xml)
 
-    nations = set()
+    element = root.find("WANATIONS")
 
-    for element in root.iter():
-        if element.tag.upper() == "NATIONS":
-            nations.update(
-                parse_nations(element.text or "")
-            )
-
-    if not nations:
+    if element is None:
         raise RuntimeError(
-            "NationStates returned no regional nations."
+            "NationStates did not return WANATIONS."
         )
 
-    return nations
+    return parse_list(
+        element.text or ""
+    )
 
 
-def get_wa_members():
+def has_endorsement(nation):
     xml = api_request({
-        "wa": "3",
-        "q": "members"
+        "nation": nation,
+        "q": "endorsements"
     })
 
     root = ET.fromstring(xml)
 
-    members = set()
-
-    for element in root.iter():
-        if element.tag.upper() in {
-            "NATIONS",
-            "MEMBERS"
-        }:
-            members.update(
-                parse_nations(element.text or "")
-            )
-
-    if not members:
-        raise RuntimeError(
-            "NationStates returned no WA members."
+    endorsements = parse_list(
+        root.findtext(
+            "ENDORSEMENTS",
+            ""
         )
+    )
 
-    return members
+    return NATION_SLUG in endorsements
 
 
 def nation_url(nation):
@@ -152,13 +124,22 @@ def generate_html(nations):
         "endorsements.html"
     )
 
-    os.makedirs(output_dir, exist_ok=True)
+    os.makedirs(
+        output_dir,
+        exist_ok=True
+    )
 
     entries = []
 
     for nation in sorted(nations):
-        display_name = nation.replace("_", " ")
-        safe_name = html.escape(display_name)
+        display_name = nation.replace(
+            "_",
+            " "
+        )
+
+        safe_name = html.escape(
+            display_name
+        )
 
         entries.append(
             f"""
@@ -301,36 +282,63 @@ function addNation() {{
 
 
 def main():
-    region, endorsements = get_nation_info()
+    region = get_region()
 
-    region_nations = get_region_nations(region)
-    wa_members = get_wa_members()
-
-    wa_in_region = region_nations & wa_members
-
-    wa_in_region.discard(NATION_SLUG)
-
-    unendorsed = {
-        nation
-        for nation in wa_in_region
-        if nation not in endorsements
-    }
-
-    already_endorsed = (
-        wa_in_region & endorsements
+    wa_nations = get_wa_nations(
+        region
     )
 
+    wa_nations.discard(
+        NATION_SLUG
+    )
+
+    endorsed = set()
+    unendorsed = set()
+
+    total = len(wa_nations)
+
     print(f"Region: {region}")
-    print(f"Region nations found: {len(region_nations)}")
-    print(f"WA members found: {len(wa_members)}")
-    print(f"WA nations in region: {len(wa_in_region)}")
-    print(f"Your endorsements: {len(endorsements)}")
-    print(f"Already endorsed in region: {len(already_endorsed)}")
-    print(f"Unendorsed WA nations: {len(unendorsed)}")
+    print(f"WA nations found: {total}")
 
-    output = generate_html(unendorsed)
+    for index, nation in enumerate(
+        sorted(wa_nations),
+        start=1
+    ):
+        try:
+            if has_endorsement(nation):
+                endorsed.add(nation)
+            else:
+                unendorsed.add(nation)
 
-    print(f"Generated: {output}")
+        except Exception as error:
+            print(
+                f"Error checking {nation}: {error}"
+            )
+
+        if index % 25 == 0 or index == total:
+            print(
+                f"Checked {index}/{total}"
+            )
+
+        time.sleep(0.5)
+
+    output = generate_html(
+        unendorsed
+    )
+
+    print(
+        f"Already endorsed: "
+        f"{len(endorsed)}"
+    )
+
+    print(
+        f"Unendorsed WA nations: "
+        f"{len(unendorsed)}"
+    )
+
+    print(
+        f"Generated: {output}"
+    )
 
 
 if __name__ == "__main__":
