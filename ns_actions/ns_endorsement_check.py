@@ -21,6 +21,9 @@ HEADERS = {
 session = requests.Session()
 session.headers.update(HEADERS)
 
+BATCH_SIZE = 40
+BATCH_DELAY = 30
+
 
 def normalize(name):
     return name.strip().lower().replace(" ", "_")
@@ -366,15 +369,22 @@ def main():
                 f"Error checking {nation}: "
                 f"{error}"
             )
-
             unendorsed.add(nation)
 
-        if index % 25 == 0 or index == total:
+        if index % 10 == 0 or index == total:
             print(
                 f"Checked {index}/{total}"
             )
 
-        time.sleep(1)
+        if (
+            index % BATCH_SIZE == 0
+            and index < total
+        ):
+            print(
+                f"Rate-limit pause after "
+                f"{index} requests..."
+            )
+            time.sleep(BATCH_DELAY)
 
     output = generate_html(
         unendorsed
@@ -384,12 +394,10 @@ def main():
         f"Already endorsed: "
         f"{len(endorsed)}"
     )
-
     print(
         f"Unendorsed WA nations: "
         f"{len(unendorsed)}"
     )
-
     print(
         f"Generated: {output}"
     )
