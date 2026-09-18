@@ -1,6 +1,8 @@
 import os
 import requests
 
+# Hello! Welcome to ns_country_ping.py!
+
 # Get some data from your GitHub Secrets
 # Make sure to create a secret with the name NS_NATION_NAME. Example: country_name
 # Make sure to create a secret with the name NS_CONTACT_INFO (For ping API). Example: country_name OR example@gmail.com
